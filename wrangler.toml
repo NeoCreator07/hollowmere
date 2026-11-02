@@ -1,0 +1,12 @@
+name = "hollowmere-relay"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# One Durable Object instance per room — this is what lets two sockets that
+# land on different edge isolates actually find each other.
+[durable_objects]
+bindings = [{ name = "ROOM", class_name = "Room" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

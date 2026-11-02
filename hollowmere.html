@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Hollowmere — Splatline</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d1214">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1214'/%3E%3Cg fill='%23c4452d'%3E%3Ccircle cx='32' cy='36' r='13'/%3E%3Ccircle cx='21' cy='30' r='7'/%3E%3Ccircle cx='43' cy='30' r='8'/%3E%3Ccircle cx='44' cy='44' r='7'/%3E%3Ccircle cx='22' cy='43' r='6.5'/%3E%3Ccircle cx='32' cy='22' r='6'/%3E%3Ccircle cx='33' cy='50' r='5.5'/%3E%3Ccircle cx='14' cy='49' r='3.4'/%3E%3Ccircle cx='52' cy='38' r='2.6'/%3E%3Ccircle cx='26' cy='55' r='2.2'/%3E%3C/g%3E%3Ccircle cx='27' cy='31' r='3.6' fill='%23e0654a' opacity='.85'/%3E%3Ccircle cx='50' cy='18' r='4.6' fill='%23e4dfd0'/%3E%3Ccircle cx='56' cy='12' r='2' fill='%23e4dfd0' opacity='.65'/%3E%3Ccircle cx='60' cy='7' r='1.3' fill='%23e4dfd0' opacity='.4'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#0d1214;--fog:#9fb0ab;--bone:#e4dfd0;--buoy:#c4452d;--red:#d6402c;--blu:#4a7dab}
@@ -70,6 +72,8 @@ canvas.gl{display:block;position:fixed;inset:0}
 #ov{position:fixed;inset:0;display:flex;align-items:center;overflow-y:auto;padding:6vh 8vw;background:linear-gradient(90deg,rgba(13,18,20,.97) 0%,rgba(13,18,20,.88) 55%,rgba(13,18,20,.3) 100%);z-index:6}
 #ov.off{display:none}
 #ovc{max-width:660px;width:100%}
+.brand{margin:0 0 10px -4px}
+.brand svg{display:block;width:clamp(64px,8vw,92px);height:auto;filter:drop-shadow(0 8px 22px rgba(0,0,0,.55))}
 h1{font:900 clamp(48px,9vw,110px)/.88 'Big Shoulders Display',sans-serif;letter-spacing:.02em;margin:0 0 10px}
 h2{font:italic 400 clamp(16px,2.2vw,23px) 'Source Serif 4',serif;color:var(--fog);margin:0 0 18px}
 #ovc p,#ovc .story{line-height:1.6;font-size:16px;margin:0 0 18px;max-width:60ch}
@@ -122,6 +126,7 @@ input[type=text]:focus{border-color:var(--buoy)}
 </div>
 <div id="shop"><h3>LOADOUT</h3><div class="sub">Field vendor — scrip only, no refunds.</div><div id="shopList"></div><button id="shopClose">CLOSE · B</button></div>
 <div id="ov"><div id="ovc"></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 'use strict';
@@ -129,9 +134,28 @@ input[type=text]:focus{border-color:var(--buoy)}
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t, TAU=Math.PI*2;
 function lerpAng(a,b,t){let d=(b-a)%TAU;if(d>Math.PI)d-=TAU;if(d<-Math.PI)d+=TAU;return a+d*t}
-const SET={sens:1,vol:.7,fov:75,bob:1,mini:1,shadows:2,scale:1,name:'VOSS',server:''};
+const SET={sens:1,vol:.7,fov:75,bob:1,mini:1,shadows:2,scale:1,name:'VOSS',server:'',netKind:'peer'};
 try{Object.assign(SET,JSON.parse(localStorage.getItem('hmSet')||'{}'))}catch(e){}
 const saveSet=()=>{try{localStorage.setItem('hmSet',JSON.stringify(SET))}catch(e){}};
+/* ---- brand mark: splat + incoming paintball (tab favicon + menu logo) ---- */
+const LOGO=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' role='img' aria-label='Hollowmere'><rect width='64' height='64' rx='14' fill='#0d1214'/><g fill='#c4452d'><circle cx='32' cy='36' r='13'/><circle cx='21' cy='30' r='7'/><circle cx='43' cy='30' r='8'/><circle cx='44' cy='44' r='7'/><circle cx='22' cy='43' r='6.5'/><circle cx='32' cy='22' r='6'/><circle cx='33' cy='50' r='5.5'/><circle cx='14' cy='49' r='3.4'/><circle cx='52' cy='38' r='2.6'/><circle cx='26' cy='55' r='2.2'/></g><circle cx='27' cy='31' r='3.6' fill='#e0654a' opacity='.85'/><circle cx='50' cy='18' r='4.6' fill='#e4dfd0'/><circle cx='56' cy='12' r='2' fill='#e4dfd0' opacity='.65'/><circle cx='60' cy='7' r='1.3' fill='#e4dfd0' opacity='.4'/></svg>`;
+function setFavicon(){
+ try{
+  const c=document.createElement('canvas');c.width=c.height=64;
+  const x=c.getContext('2d');
+  const dot=(cx,cy,r)=>{x.beginPath();x.arc(cx,cy,r,0,7);x.fill()};
+  x.beginPath();x.moveTo(14,0);x.arcTo(64,0,64,64,14);x.arcTo(64,64,0,64,14);x.arcTo(0,64,0,0,14);x.arcTo(0,0,64,0,14);x.closePath();
+  x.fillStyle='#0d1214';x.fill();
+  x.fillStyle='#c4452d';
+  dot(32,36,13);dot(21,30,7);dot(43,30,8);dot(44,44,7);dot(22,43,6.5);dot(32,22,6);dot(33,50,5.5);
+  dot(14,49,3.4);dot(52,38,2.6);dot(26,55,2.2);
+  x.fillStyle='rgba(224,101,74,.9)';dot(27,31,3.6);
+  x.fillStyle='#e4dfd0';dot(50,18,4.6);
+  x.globalAlpha=.65;dot(56,12,2);x.globalAlpha=.4;dot(60,7,1.3);x.globalAlpha=1;
+  const url=c.toDataURL('image/png');
+  const l=document.createElement('link');l.rel='icon';l.type='image/png';l.href=url;document.head.appendChild(l);
+  const a=document.createElement('link');a.rel='apple-touch-icon';a.href=url;document.head.appendChild(a);
+ }catch(e){}}
 let seed=1337;const rnd=()=>((seed=(seed*16807)%2147483647)/2147483647);
 let BASEFOV=SET.fov;
 /* co-op action outbox (see networking section: piggybacks on 'p' packets) */
@@ -1583,44 +1607,128 @@ function flagLogic(){
    · Actions (reload, dry fire, grenade, weapon swap, down/up) piggyback on
      the 'p' packet as `act`, so the partner sees what you are doing.       */
 const NET={on:false,isHost:false,gp:null,tP:0,tS:0};
-const NS={ws:null,open:false,room:null,id:null,role:null,name:'VOSS',peerName:'PARTNER'};
+const NS={link:null,peer:null,open:false,room:null,id:null,role:null,name:'VOSS',peerName:'PARTNER',kind:'peer'};
 const RP={g:null,parts:null,tag:null,tx:0,ty:0,tz:0,ry:0,hp:100,ph:0,prev:new THREE.Vector3()};
 function queueAct(a){actQ=a}
 const authority=()=>!NET.on||NET.isHost;
-function nsnd(o){if(NS.ws&&NS.ws.readyState===1)try{NS.ws.send(JSON.stringify(o))}catch(e){}}
+function nsnd(o){if(NS.link)try{NS.link.send(JSON.stringify(o))}catch(e){}}
 function defaultServer(){try{if(location.protocol.indexOf('http')===0&&location.hostname.indexOf('.')>0)
  return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'}catch(e){}return ''}
 function serverURL(){let u=(SET.server||'').trim()||defaultServer();if(!u)return '';
  u=u.replace(/\/+$/,'');if(!/\/ws$/.test(u))u+='/ws';return u}
-function netConnect(room){
- if(NS.ws){try{NS.ws.onclose=null;NS.ws.close()}catch(e){}NS.ws=null}
- NS.open=false;NS.room=room;NET.on=false;NET.isHost=false;
+/* ---- transport layer -------------------------------------------------
+   Both transports expose NS.link = {kind, send(str), close()} and feed every
+   inbound string into handleNetData(). The game protocol on top (join/peer/
+   welcome/left + all gameplay messages) is identical for both:
+     · PEER CLOUD (PeerJS)  — zero setup. The public PeerJS broker does the
+       signalling, then gameplay flows player-to-player over WebRTC.
+     · WORKER RELAY          — your Cloudflare Worker (worker.js) relays every
+       message verbatim between the two sockets in a room.
+   Host = whoever created the room code. --------------------------------*/
+function handleNetData(str){
+ let m;try{m=JSON.parse(str)}catch(err){return}
+ if(m.t==='welcome'){NS.id=m.id;NS.role=m.role;NET.isHost=m.role==='host';lobbyRefresh()}
+ else if(m.t==='peer'){NS.peerName=(m.name||'PARTNER').toUpperCase();NET.on=true;onPeerJoined();lobbyRefresh()}
+ else if(m.t==='join'){
+  const nm=String(m.name||'PLAYER').slice(0,12).toUpperCase();
+  /* PeerJS host: introduce myself back and link the session up */
+  if(NS.link&&NS.link.kind==='peer'&&NS.role==='host'){
+   nsnd({t:'peer',name:NS.name});
+   NS.peerName=nm;NET.on=true;onPeerJoined();lobbyRefresh()}}
+ else if(m.t==='full'){closeLink();onlineStat('That room already has two players in it.')}
+ else if(m.t==='left'){onPeerLeft(m.name);lobbyRefresh()}
+ else if(m.t!=='pong')onMsg(m)}
+function closeLink(){
+ if(NS.peer){try{NS.peer.destroy()}catch(e){}NS.peer=null}
+ if(NS.link){const l=NS.link;NS.link=null;try{l.close()}catch(e){}}
+ NS.open=false;NS.role=null;NET.on=false;
+ if(RP.g)RP.g.visible=false}
+/* ---- transport A: PeerJS cloud (default, no server to deploy) ---- */
+function peerErrText(t){
+ if(t==='unavailable-id')return 'That room code is already taken — create a new one.';
+ if(t==='peer-unavailable')return 'No room with that code is open right now.';
+ if(t==='network')return 'Lost the PeerJS cloud — it usually reconnects on its own.';
+ if(t==='server-error'||t==='socket-error'||t==='socket-disconnected')return 'PeerJS cloud unreachable — try again, or switch to the worker relay.';
+ return ''}
+function bindPeerConn(conn){   /* host side: one partner connection */
+ conn.on('open',()=>{
+  NS.open=true;NS.role='host';NET.isHost=true;
+  NS.link={kind:'peer',send:s=>{try{conn.send(s)}catch(e){}},close:()=>{try{conn.close()}catch(e){}}};
+  try{conn.send(JSON.stringify({t:'welcome',id:conn.peer,role:'host'}))}catch(e){}
+  onlineStat('Partner connected — linking up…');lobbyRefresh()});
+ conn.on('data',d=>{if(NS.link&&NS.link.kind==='peer')handleNetData(String(d))});
+ conn.on('close',()=>{
+  if(NS.link&&NS.link.kind==='peer'){NS.link=null;
+   onPeerLeft(null);lobbyRefresh()}})}
+function openPeerLink(room){   /* CREATE a room → this client is the host */
+ if(!window.Peer){onlineStat('PeerJS did not load — check your connection, or use the worker relay.');return}
+ closeLink();
+ NS.room=room;NS.kind='peer';NET.on=false;NET.isHost=false;
+ onlineStat('Registering room '+room+' with the PeerJS cloud…');
+ let conn=null;
+ const peer=new Peer('hm-'+room,{debug:0});NS.peer=peer;
+ peer.on('open',()=>{NS.open=true;NS.role='host';NET.isHost=true;
+  onlineStat('Room '+room+' is live — waiting for your partner…');lobbyRefresh()});
+ peer.on('connection',c=>{
+  if(conn&&conn.open){          /* third wheel: politely reject */
+   c.on('open',()=>{try{c.send(JSON.stringify({t:'full'}))}catch(e){}
+    setTimeout(()=>{try{c.close()}catch(e2){}},200)});return}
+  conn=c;bindPeerConn(c)});
+ peer.on('error',err=>{const s=peerErrText(err&&err.type);if(s)onlineStat(s)});
+ peer.on('disconnected',()=>{if(!peer.destroyed)try{peer.reconnect()}catch(e){}});
+ showLobby()}
+function openPeerGuest(room){  /* JOIN a room → the other player is the host */
+ if(!window.Peer){onlineStat('PeerJS did not load — check your connection, or use the worker relay.');return}
+ closeLink();
+ NS.room=room;NS.kind='peer';NET.on=false;NET.isHost=false;
+ onlineStat('Looking up room '+room+' …');
+ const peer=new Peer({debug:0});NS.peer=peer;
+ peer.on('open',()=>{
+  const conn=peer.connect('hm-'+room,{reliable:true});
+  conn.on('open',()=>{
+   NS.open=true;
+   NS.link={kind:'peer',send:s=>{try{conn.send(s)}catch(e){}},close:()=>{try{conn.close()}catch(e){}}};
+   try{conn.send(JSON.stringify({t:'join',name:NS.name}))}catch(e){}
+   onlineStat('Connected — introducing yourself to the host…');showLobby();lobbyRefresh()});
+  conn.on('data',d=>{if(NS.link&&NS.link.kind==='peer')handleNetData(String(d))});
+  conn.on('close',()=>{
+   if(NS.link&&NS.link.kind==='peer'){NS.link=null;NS.open=false;
+    if(NS.role)onPeerLeft(null);
+    else onlineStat('The host is not answering — check the code and try again.');
+    lobbyRefresh()}})});
+ peer.on('error',err=>{const s=peerErrText(err&&err.type);if(s)onlineStat(s)});
+ peer.on('disconnected',()=>{if(!peer.destroyed)try{peer.reconnect()}catch(e){}})}
+/* ---- transport B: your Cloudflare Worker relay ---- */
+function openWorkerLink(room){
+ closeLink();
+ NS.room=room;NS.kind='worker';NET.on=false;NET.isHost=false;
  const base=serverURL();
- if(!base){onlineStat('No co-op server set — add your worker URL in SETTINGS.');return}
+ if(!base){onlineStat('No relay server set — add your worker URL in SETTINGS, or use the PeerJS cloud.');return}
  onlineStat('Connecting to room '+room+' …');
  let ws;
  try{ws=new WebSocket(base+'/'+encodeURIComponent(room))}catch(e){onlineStat('Socket error: '+e.message);return}
- NS.ws=ws;
+ NS.link={kind:'worker',send:s=>{if(ws.readyState===1)try{ws.send(s)}catch(e){}},
+  close:()=>{try{ws.onclose=null;ws.close()}catch(e){}}};
  ws.onopen=()=>{NS.open=true;nsnd({t:'join',name:NS.name});
   onlineStat('Connected — waiting for your partner…');lobbyRefresh()};
- ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(err){return}
-  if(m.t==='welcome'){NS.id=m.id;NS.role=m.role;NET.isHost=m.role==='host';lobbyRefresh()}
-  else if(m.t==='peer'){NS.peerName=(m.name||'PARTNER').toUpperCase();NET.on=true;onPeerJoined();lobbyRefresh()}
-  else if(m.t==='full'){onlineStat('That room already has two players in it.');try{ws.close(4000)}catch(e2){}}
-  else if(m.t==='left'){onPeerLeft(m.name);lobbyRefresh()}
-  else if(m.t!=='pong')onMsg(m)};
- ws.onclose=()=>{if(NS.open){NS.open=false;
+ ws.onmessage=e=>handleNetData(e.data);
+ ws.onclose=()=>{const mine=NS.link;
+  if(mine&&mine.kind==='worker'){NS.link=null;NS.open=false;
    if(NET.on)onPeerLeft(null);
-   else onlineStat('Connection closed — the room is gone.')}
-  else if(state==='menu')onlineStat('Could not reach the co-op server — check the address in SETTINGS.')};
- ws.onerror=()=>{if(!NS.open&&state==='menu')onlineStat('Could not reach the co-op server — check the address in SETTINGS.')};
+   else if(!NS.role)onlineStat('Could not reach the co-op server — check the address in SETTINGS.');
+   else onlineStat('Connection closed — the room is gone.');
+   lobbyRefresh()}};
+ ws.onerror=()=>{};
  showLobby()}
+function netConnect(room,kind){NS.kind=kind||SET.netKind||'peer';
+ if(NS.kind==='worker')openWorkerLink(room);else openPeerLink(room)}
+function netJoin(room,kind){NS.kind=kind||SET.netKind||'peer';
+ if(NS.kind==='worker')openWorkerLink(room);else openPeerGuest(room)}
 function onPeerJoined(){
  feed(NS.peerName+' joined the session');
  tone(880,1320,.14,.18,'triangle');
  /* partner connected while a match is already running: pull them straight in */
- if(NET.isHost&&CUR&&state==='play'&&!NET.on){NET.on=true;
-  nsnd({t:'init',mode:CUR.mode,mi:CUR.mi,cfg:CUR.cfg,map:CUR.map})}}
+ if(NET.isHost&&CUR&&state==='play')nsnd({t:'init',mode:CUR.mode,mi:CUR.mi,cfg:CUR.cfg,map:CUR.map})}
 function onPeerLeft(name){
  if(!NET.on){if(state==='menu')onlineStat((name||NS.peerName)+' left — waiting for a new partner…');return}
  NET.on=false;if(RP.g)RP.g.visible=false;
@@ -1709,7 +1817,7 @@ function flagArr(f){return [f.state,+f.pos.x.toFixed(2),+f.pos.z.toFixed(2),
  f.carrier?(f.carrier==='H'||f.carrier==='G'?f.carrier:f.carrier.id):0]}
 let lastWave=-1;
 function applyState(m){
- if(!NET.isHost)return;
+ if(NET.isHost)return;   /* snapshots flow host→guest; the host is authoritative */
  const seen=new Set();
  for(const e of m.e){const [id,x,z,ry,team,alive,hp,boss]=e;seen.add(id);
   let p=pups.get(id);
@@ -1725,7 +1833,7 @@ function applyState(m){
   else if(p.marker){p.marker.position.y=2.7+Math.sin(performance.now()/300)*.12;p.marker.rotation.y+=.05}}
  for(const [id,p] of pups)if(!seen.has(id)){S.remove(p.g);pups.delete(id)}
  [[flags.blue,m.fl[0]],[flags.red,m.fl[1]]].forEach(([f,a])=>{f.state=a[0];f.pos.set(a[1],0,a[2]);f.carrier=a[3]||null});
- game.scores[0]=m.sc[1];game.scores[1]=m.sc[0];
+ game.scores[0]=m.sc[0]||0;game.scores[1]=m.sc[1]||0;
  if(m.wv[0]!==lastWave){if(m.wv[0]>lastWave&&m.wv[0]>0)banner('WAVE '+m.wv[0],m.wv[1]+' hostiles remain — clear fast for bonus');
   lastWave=m.wv[0]}
  game.alive=m.wv[1];game.total=m.wv[2]||game.total;
@@ -1741,7 +1849,7 @@ function sendState(){
  const ns={t:'s',
   e:agents.map(a=>[a.id,+a.g.position.x.toFixed(2),+a.g.position.z.toFixed(2),+a.g.rotation.y.toFixed(2),a.team,a.alive?1:0,Math.round(a.hp),a.boss?1:0]),
   fl:[flagArr(flags.blue),flagArr(flags.red)],
-  sc:[game.scores[1],game.scores[0]],
+  sc:[game.scores[0],game.scores[1]],
   wv:[game.wave,game.alive,game.total],
   st:+(game.inter||0).toFixed(1)};
  if(veh.g.visible)ns.vh=[+veh.x.toFixed(2),+veh.z.toFixed(2),+veh.a.toFixed(2),veh.driver||0];
@@ -1761,28 +1869,34 @@ const makeCode=()=>{const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789';let s='';
 function onlineStat(s){const el=$('ostat');if(el)el.textContent=s}
 function showOnline(){
  NS.name=(SET.name||'VOSS').toUpperCase();
+ const kind=SET.netKind||'peer';
  $('ovc').innerHTML=`<h1 style="font-size:46px">ONLINE CO-OP</h1>
-  <h2>Two players, one island, through your Cloudflare relay.</h2>
+  <h2>Two players, one island — PeerJS cloud or your own relay.</h2>
+  <div class="srow"><label>TRANSPORT<small>how the two of you find each other</small></label>
+   <select id="onKind"><option value="peer">PEERJS CLOUD · no setup</option>
+   <option value="worker">YOUR WORKER RELAY</option></select></div>
   <div class="srow"><label>CALLSIGN<small>shown above your partner’s screen</small></label>
    <input type="text" id="onName" maxlength="12" value="${NS.name}" style="width:170px"></div>
-  <div class="srow"><label>RELAY SERVER<small>${serverURL()||'none set — add it in SETTINGS'}</small></label></div>
+  <div class="srow"><label>RELAY SERVER<small>${kind==='worker'?(serverURL()||'none set — add it in SETTINGS'):'only used by the worker-relay transport'}</small></label></div>
   <div class="orow"><button id="onNew">CREATE ROOM</button>
    <input type="text" id="onCode" maxlength="6" placeholder="CODE" style="width:110px;text-transform:uppercase">
    <button class="ghost" id="onJoin">JOIN ROOM</button></div>
-  <p class="statline" id="ostat">One of you creates a room and shares the code; the other joins it. The first player in the room hosts the simulation — bots, flags, waves and the jeep all run on their machine and stream to the other.</p>
+  <p class="statline" id="ostat">Create a room, share the four-letter code, and your partner joins it. With the PeerJS cloud nobody deploys anything — signalling runs on the public PeerJS broker and the game data flows player-to-player. With your worker relay, both of you connect to <b>wss://…/ws/CODE</b>.</p>
   <button class="ghost" id="bkM">BACK</button>`;
  $('ov').classList.remove('off');
+ $('onKind').value=kind;
  $('bkM').onclick=showMenu;
+ $('onKind').onchange=()=>{SET.netKind=$('onKind').value;saveSet();showOnline()};
  $('onName').oninput=()=>{SET.name=$('onName').value;saveSet();
   NS.name=(SET.name||'VOSS').toUpperCase()};
- $('onNew').onclick=()=>{initAC();netConnect(makeCode())};
+ $('onNew').onclick=()=>{initAC();netConnect(makeCode(),SET.netKind||'peer')};
  $('onJoin').onclick=()=>{initAC();
   const c=$('onCode').value.trim().toUpperCase();
   if(c.length<3){onlineStat('Room codes are four letters — type one first.');return}
-  netConnect(c)}}
+  netJoin(c,SET.netKind||'peer')}}
 function showLobby(){
  $('ovc').innerHTML=`<h1 style="font-size:44px">CO-OP LOBBY</h1>
-  <h2>Give this code to your partner — they join it from ONLINE CO-OP.</h2>
+  <h2>Give this code to your partner — they join it from ONLINE CO-OP · via ${NS.kind==='worker'?'your worker relay':'the PeerJS cloud'}.</h2>
   <div class="ocode">${NS.room||'····'}</div>
   <p class="statline" id="ostat">…</p>
   <div id="lbyModes" style="display:none"><h2 style="margin-top:14px">CHOOSE THE MATCH</h2>
@@ -1793,7 +1907,7 @@ function showLobby(){
    </div></div>
   <button class="ghost" id="bkM">LEAVE ROOM</button>`;
  $('ov').classList.remove('off');
- $('bkM').onclick=()=>{if(NS.ws){try{NS.ws.onclose=null;NS.ws.close()}catch(e){}NS.ws=null;NS.open=false;NET.on=false}showMenu()};
+ $('bkM').onclick=()=>{closeLink();showMenu()};
  document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>{
   const l=b.dataset.l;
   if(l==='camp')showCampaign();
@@ -1802,9 +1916,9 @@ function showLobby(){
  lobbyRefresh()}
 function lobbyRefresh(){
  const el=$('ostat');if(!el)return;
- if(!NS.open){el.textContent=NS.ws?'Connecting…':'Not connected.';return}
  if(NET.on)el.textContent='Linked with '+NS.peerName+' — you are '+(NS.role==='host'?'the HOST. Pick the match when ready.':'the GUEST. The host will deploy the match.');
- else el.textContent='Waiting for a partner… you are '+(NS.role==='host'?'the HOST (first in the room).':'the GUEST.');
+ else if(NS.open)el.textContent=NS.role==='host'?'Room is live — waiting for your partner… you are the HOST.':'Connected — waiting for the host to link up… you are the GUEST.';
+ else el.textContent='Connecting…';
  const lm=$('lbyModes');
  if(lm)lm.style.display=(NS.role==='host'&&NS.open)?'block':'none'}
 
@@ -1880,14 +1994,14 @@ function startMission(i,role){
 /* ============ menus ============ */
 function showMenu(){state='menu';NET.on=false;paused=false;shopOpen=false;closeShop(false);
  $('shop').style.display='none';$('hud').classList.add('off');
- $('ovc').innerHTML=`<h1>HOLLOWMERE</h1>
+ $('ovc').innerHTML=`<div class="brand">${LOGO}</div><h1>HOLLOWMERE</h1>
  <h2>SPLATLINE — the harbour island is a paintball proving ground now.</h2>
- <p>Black Tern Company took the village and left their boots in rows. You took a marker, a hopper of paint and a bad attitude. Play the campaign, raise a war on any of ten islands, or take a partner online through your relay.</p>
+ <p>Black Tern Company took the village and left their boots in rows. You took a marker, a hopper of paint and a bad attitude. Play the campaign, raise a war on any of ten islands, or take a partner online through the PeerJS cloud or your own relay.</p>
  <div class="mlist">
   <button class="mb" data-m="camp"><b>01</b> CAMPAIGN<small>six missions · one missing village</small></button>
   <button class="mb" data-m="war"><b>02</b> WAR MODE<small>10 maps · pick your squad size</small></button>
   <button class="mb" data-m="skirm"><b>03</b> SKIRMISH<small>random map · endless waves</small></button>
-  <button class="mb" data-m="online"><b>04</b> ONLINE CO-OP<small>two players · one relay room</small></button>
+  <button class="mb" data-m="online"><b>04</b> ONLINE CO-OP<small>two players · PeerJS cloud or relay</small></button>
   <button class="mb" data-m="set"><b>05</b> SETTINGS<small>sight, sound, frame, server</small></button>
  </div>
  <div class="k">WASD move · SHIFT sprint · SPACE jump · LMB fire · RMB sights · R reload · 1-6 weapons · G grenade · E vehicle · B shop · ESC menu</div>`;
@@ -1967,7 +2081,7 @@ function showSettings(fromPause){
   <input type="range" id="stScale" min="0.5" max="1" step="0.05" value="${SET.scale}"><span class="val" id="stScaleV">${Math.round(SET.scale*100)}%</span></div>
  <div class="srow"><label>CALLSIGN<small>your name in online co-op</small></label>
   <input type="text" id="stName" maxlength="12" value="${SET.name||'VOSS'}" style="width:170px"></div>
- <div class="srow"><label>CO-OP RELAY<small>your worker URL, e.g. wss://hollowmere-relay.you.workers.dev/ws</small></label>
+ <div class="srow"><label>CO-OP RELAY<small>optional — used by the “worker relay” transport; PeerJS needs none</small></label>
   <input type="text" id="stSrv" value="${SET.server||''}" style="flex:1;min-width:230px" placeholder="wss://your-worker.workers.dev/ws"></div>
  <button class="ghost" id="bkM">BACK</button>`;
  $('stSh').value=String(SET.shadows);
@@ -2007,7 +2121,7 @@ function showPause(note){
  $('resB').onclick=()=>{paused=false;$('ov').classList.add('off');R.domElement.requestPointerLock()};
  $('setB').onclick=()=>showSettings(true);
  $('rstB').onclick=()=>restartMatch();
- $('quitB').onclick=()=>{if(NS.ws){try{NS.ws.onclose=null;NS.ws.close()}catch(e){}NS.ws=null;NS.open=false;NET.on=false}showMenu()}}
+ $('quitB').onclick=()=>{closeLink();showMenu()}}
 function restartMatch(){
  if(!CUR)return;
  if(NET.on&&NET.isHost)nsnd({t:'init',mode:CUR.mode,mi:CUR.mi,cfg:CUR.cfg,map:CUR.map});
@@ -2071,7 +2185,7 @@ function frame(){requestAnimationFrame(frame);
  water.uni.time.value+=dt;sky.rotation.y+=dt*.004;
  leavesTick(dt);
  remoteTick(dt);                     /* smooth the partner entity   */
- if(NS.ws&&NS.open){hbT-=dt;         /* keep-alive while idling     */
+ if(NS.link&&NS.open&&NS.link.kind==='worker'){hbT-=dt;   /* keep-alive on the relay */
   if(hbT<=0){hbT=8;nsnd({t:'ping'})}}
  if(state==='menu'){menuA+=dt*.06;
   C.position.set(Math.cos(menuA)*46,13,Math.sin(menuA)*46);C.lookAt(0,2,0);
@@ -2147,6 +2261,7 @@ function frame(){requestAnimationFrame(frame);
   else bb.style.display='none'}
  if(water.mesh.visible)water.render(R,S,C);
  R.render(S,C)}
+setFavicon();
 applySettings();
 showMenu();
 frame();
