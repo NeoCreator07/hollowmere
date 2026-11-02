@@ -1,36 +1,35 @@
 /**
- * HOLLOWMERE — online co-op relay
- * Cloudflare Worker + Durable Object ("Room")
+ * HOLLOWMERE — the game AND the co-op relay, in one deployment.
  *
- * Endpoints
- *   GET  /               → service status (JSON)
- *   GET  /health         → service status (JSON)
- *   ANY  /ws/<ROOMCODE>  → WebSocket upgrade. Room codes are 3–16 chars,
- *                          case-insensitive (normalised to upper-case).
+ * Routes
+ *   GET  /                → the game (hollowmere.html, bundled as a text module)
+ *   GET  /favicon.ico     → the splat logo
+ *   GET  /health          → {"ok":true,…} status ping for curl / uptime checks
+ *   ANY  /ws/<ROOMCODE>   → WebSocket relay. Codes are 3–16 chars, case-insensitive.
  *
- * Room behaviour
- *   · First socket to open a room becomes HOST, the second GUEST.
- *   · A third connection is accepted, told {t:'full'}, and closed.
- *   · On connect the server sends  {t:'welcome', id, role}.
- *   · Clients send {t:'join', name} once connected; when both players have
- *     joined, both receive {t:'peer', name:<other player's name>}.
- *   · Every other message is relayed VERBATIM to the other socket — the game
- *     protocol (positions, shots, state snapshots) is peer-to-peer over this
- *     pipe; the worker never inspects it.
- *   · {t:'ping'} → {t:'pong'} keep-alive (not relayed).
- *   · On disconnect the survivor receives {t:'left', name}.
+ * Open your worker URL in any browser and you are on the island. The game
+ * auto-detects its own origin, so the WORKER RELAY co-op transport needs no
+ * server URL pasted anywhere when you play from this URL.
  *
- * Uses the WebSocket Hibernation API, so rooms survive isolate evictions and
- * you do not pay for idle wall-clock time. Socket attachments carry each
- * player's {id, role, name} across hibernation.
+ * Rooms (Durable Object "Room")
+ *   · First socket = HOST, second = GUEST; a third is refused with {t:'full'}.
+ *   · welcome / join / peer / left handshake, then every other message is
+ *     relayed VERBATIM between the two sockets — the worker never inspects
+ *     the gameplay protocol.
+ *   · Uses the WebSocket Hibernation API: rooms survive isolate evictions
+ *     and idle rooms cost nothing.
  *
- * Deploy:  npx wrangler deploy        (wrangler.toml included)
- * Local:   npx wrangler dev  →  ws://127.0.0.1:8787/ws/<CODE>
+ * Deploy: keep worker.js, hollowmere.html and wrangler.toml in one folder,
+ *         then  npx wrangler deploy
  */
+
+import GAME_HTML from "./hollowmere.html";
 
 const ROOM_LIMIT = 2;
 const CODE_RE = /^\/ws\/([A-Za-z0-9-]{3,16})\/?$/;
 const json = o => JSON.stringify(o);
+
+const FAVICON = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='#0d1214'/><g fill='#c4452d'><circle cx='32' cy='36' r='13'/><circle cx='21' cy='30' r='7'/><circle cx='43' cy='30' r='8'/><circle cx='44' cy='44' r='7'/><circle cx='22' cy='43' r='6.5'/><circle cx='32' cy='22' r='6'/><circle cx='33' cy='50' r='5.5'/><circle cx='14' cy='49' r='3.4'/><circle cx='52' cy='38' r='2.6'/><circle cx='26' cy='55' r='2.2'/></g><circle cx='27' cy='31' r='3.6' fill='#e0654a' opacity='.85'/><circle cx='50' cy='18' r='4.6' fill='#e4dfd0'/><circle cx='56' cy='12' r='2' fill='#e4dfd0' opacity='.65'/><circle cx='60' cy='7' r='1.3' fill='#e4dfd0' opacity='.4'/></svg>`;
 
 export class Room {
   constructor(state, env) {
@@ -113,14 +112,33 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname === '/' || url.pathname === '/health')
+    /* The game itself — this is what greets you when you open the worker. */
+    if (url.pathname === '/' || url.pathname === '/index.html')
+      return new Response(GAME_HTML, {
+        headers: {
+          'content-type': 'text/html;charset=utf-8',
+          'cache-control': 'no-cache',
+          'referrer-policy': 'no-referrer',
+        },
+      });
+
+    if (url.pathname === '/favicon.ico')
+      return new Response(FAVICON, {
+        headers: {
+          'content-type': 'image/svg+xml',
+          'cache-control': 'public,max-age=86400',
+        },
+      });
+
+    /* Status ping — moved here so / could become the game. */
+    if (url.pathname === '/health')
       return new Response(
-        json({ ok: true, service: 'hollowmere-relay', ws: '/ws/<ROOMCODE>' }),
+        json({ ok: true, service: 'hollowmere-relay', game: '/', ws: '/ws/<ROOMCODE>' }),
         { headers: { 'content-type': 'application/json' } });
 
     const m = url.pathname.match(CODE_RE);
     if (!m)
-      return new Response('Not found. Connect with  wss://<host>/ws/<ROOMCODE>', { status: 404 });
+      return new Response('Not found. Open / to play, or connect with wss://<host>/ws/<ROOMCODE>.', { status: 404 });
 
     const room = m[1].toUpperCase();
     const stub = env.ROOM.get(env.ROOM.idFromName(room));

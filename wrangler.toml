@@ -2,6 +2,12 @@ name = "hollowmere-relay"
 main = "worker.js"
 compatibility_date = "2024-09-23"
 
+# Bundle hollowmere.html as a text module so worker.js can import and serve
+# the game at "/" — one deployment, one URL, nothing else to host.
+rules = [
+  { type = "Text", globs = ["**/*.html"] }
+]
+
 # One Durable Object instance per room — this is what lets two sockets that
 # land on different edge isolates actually find each other.
 [durable_objects]

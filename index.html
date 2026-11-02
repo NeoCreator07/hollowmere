@@ -1870,6 +1870,10 @@ function onlineStat(s){const el=$('ostat');if(el)el.textContent=s}
 function showOnline(){
  NS.name=(SET.name||'VOSS').toUpperCase();
  const kind=SET.netKind||'peer';
+ const srv=serverURL(),srvAuto=!(SET.server||'').trim();
+ const srvHint=kind==='worker'
+  ?(srv?(srvAuto?'auto-detected: ':'using: ')+srv:'none set — add it in SETTINGS')
+  :'only used by the worker-relay transport';
  $('ovc').innerHTML=`<h1 style="font-size:46px">ONLINE CO-OP</h1>
   <h2>Two players, one island — PeerJS cloud or your own relay.</h2>
   <div class="srow"><label>TRANSPORT<small>how the two of you find each other</small></label>
@@ -1877,11 +1881,11 @@ function showOnline(){
    <option value="worker">YOUR WORKER RELAY</option></select></div>
   <div class="srow"><label>CALLSIGN<small>shown above your partner’s screen</small></label>
    <input type="text" id="onName" maxlength="12" value="${NS.name}" style="width:170px"></div>
-  <div class="srow"><label>RELAY SERVER<small>${kind==='worker'?(serverURL()||'none set — add it in SETTINGS'):'only used by the worker-relay transport'}</small></label></div>
+  <div class="srow"><label>RELAY SERVER<small>${srvHint}</small></label></div>
   <div class="orow"><button id="onNew">CREATE ROOM</button>
    <input type="text" id="onCode" maxlength="6" placeholder="CODE" style="width:110px;text-transform:uppercase">
    <button class="ghost" id="onJoin">JOIN ROOM</button></div>
-  <p class="statline" id="ostat">Create a room, share the four-letter code, and your partner joins it. With the PeerJS cloud nobody deploys anything — signalling runs on the public PeerJS broker and the game data flows player-to-player. With your worker relay, both of you connect to <b>wss://…/ws/CODE</b>.</p>
+  <p class="statline" id="ostat">Create a room, share the four-letter code, and your partner joins it. With the PeerJS cloud nobody deploys anything — signalling runs on the public PeerJS broker and the game data flows player-to-player. With your worker relay, both of you connect to <b>wss://…/ws/CODE</b>. If you opened this page straight from your worker, the relay is already auto-detected — no URL needed.</p>
   <button class="ghost" id="bkM">BACK</button>`;
  $('ov').classList.remove('off');
  $('onKind').value=kind;
