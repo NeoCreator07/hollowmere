@@ -69,9 +69,9 @@ canvas.gl{display:block;position:fixed;inset:0}
 .it button{margin:0;padding:7px 16px;font-size:16px}
 .it button:disabled{opacity:.35;cursor:default}
 #shopClose{margin-top:16px}
-#ov{position:fixed;inset:0;display:flex;align-items:center;overflow-y:auto;padding:6vh 8vw;background:linear-gradient(90deg,rgba(13,18,20,.97) 0%,rgba(13,18,20,.88) 55%,rgba(13,18,20,.3) 100%);z-index:6}
+#ov{position:fixed;inset:0;display:flex;overflow-y:auto;padding:6vh 8vw;background:linear-gradient(90deg,rgba(13,18,20,.97) 0%,rgba(13,18,20,.88) 55%,rgba(13,18,20,.3) 100%);z-index:6}
 #ov.off{display:none}
-#ovc{max-width:660px;width:100%}
+#ovc{max-width:660px;width:100%;margin:auto 0}
 .brand{margin:0 0 10px -4px}
 .brand svg{display:block;width:clamp(64px,8vw,92px);height:auto;filter:drop-shadow(0 8px 22px rgba(0,0,0,.55))}
 h1{font:900 clamp(48px,9vw,110px)/.88 'Big Shoulders Display',sans-serif;letter-spacing:.02em;margin:0 0 10px}
@@ -134,7 +134,7 @@ input[type=text]:focus{border-color:var(--buoy)}
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t, TAU=Math.PI*2;
 function lerpAng(a,b,t){let d=(b-a)%TAU;if(d>Math.PI)d-=TAU;if(d<-Math.PI)d+=TAU;return a+d*t}
-const SET={sens:1,vol:.7,fov:75,bob:1,mini:1,shadows:2,scale:1,name:'VOSS',server:'',netKind:'peer'};
+const SET={sens:1,vol:.7,fov:75,bob:1,mini:1,shadows:2,scale:1,name:'VOSS',server:'',broker:'',netKind:'peer'};
 try{Object.assign(SET,JSON.parse(localStorage.getItem('hmSet')||'{}'))}catch(e){}
 const saveSet=()=>{try{localStorage.setItem('hmSet',JSON.stringify(SET))}catch(e){}};
 /* ---- brand mark: splat + incoming paintball (tab favicon + menu logo) ---- */
@@ -1607,7 +1607,7 @@ function flagLogic(){
    · Actions (reload, dry fire, grenade, weapon swap, down/up) piggyback on
      the 'p' packet as `act`, so the partner sees what you are doing.       */
 const NET={on:false,isHost:false,gp:null,tP:0,tS:0};
-const NS={link:null,peer:null,open:false,room:null,id:null,role:null,name:'VOSS',peerName:'PARTNER',kind:'peer'};
+const NS={link:null,peer:null,open:false,room:null,id:null,role:null,name:'VOSS',peerName:'PARTNER',kind:'peer',pT:null};
 const RP={g:null,parts:null,tag:null,tx:0,ty:0,tz:0,ry:0,hp:100,ph:0,prev:new THREE.Vector3()};
 function queueAct(a){actQ=a}
 const authority=()=>!NET.on||NET.isHost;
@@ -1637,55 +1637,91 @@ function handleNetData(str){
    NS.peerName=nm;NET.on=true;onPeerJoined();lobbyRefresh()}}
  else if(m.t==='full'){closeLink();onlineStat('That room already has two players in it.')}
  else if(m.t==='left'){onPeerLeft(m.name);lobbyRefresh()}
+ else if(m.t==='ping'){nsnd({t:'pong'})}
  else if(m.t!=='pong')onMsg(m)}
 function closeLink(){
+ clearPT();
  if(NS.peer){try{NS.peer.destroy()}catch(e){}NS.peer=null}
  if(NS.link){const l=NS.link;NS.link=null;try{l.close()}catch(e){}}
- NS.open=false;NS.role=null;NET.on=false;
+ PC=null;NS.open=false;NS.role=null;NET.on=false;
  if(RP.g)RP.g.visible=false}
-/* ---- transport A: PeerJS cloud (default, no server to deploy) ---- */
+/* ---- transport A: PeerJS (public cloud by default; self-hosted broker optional) ---- */
+const ICE_CFG={iceServers:[{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'}]};
+let PC=null;             /* the one active partner DataConnection (host side) */
+function peerBroker(){   /* SET.broker: 'host[:port][/path]' or 'https://host/path' */
+ const s=(SET.broker||'').trim();if(!s)return null;
+ try{
+  const hasScheme=/^[a-z][a-z0-9+.-]*:\/\//i.test(s);
+  const u=new URL(hasScheme?s:'http://'+s);
+  const local=/^(localhost|127\.|0\.0\.0\.0|\[::1\])/i.test(u.hostname)||(!hasScheme&&u.port==='9000');
+  const secure=hasScheme?u.protocol==='https:':!local;
+  return {host:u.hostname,port:+(u.port||(secure?443:9000)),
+   path:(u.pathname.replace(/\/+$/,'')||'/'),secure,key:'peerjs'}}
+ catch(e){return null}}
+function peerOpts(){const o={debug:0,config:ICE_CFG};const b=peerBroker();if(b)Object.assign(o,b);return o}
+const brokerName=()=>peerBroker()?'your broker ('+SET.broker.trim()+')':'the PeerJS cloud';
 function peerErrText(t){
  if(t==='unavailable-id')return 'That room code is already taken — create a new one.';
  if(t==='peer-unavailable')return 'No room with that code is open right now.';
  if(t==='network')return 'Lost the PeerJS cloud — it usually reconnects on its own.';
  if(t==='server-error'||t==='socket-error'||t==='socket-disconnected')return 'PeerJS cloud unreachable — try again, or switch to the worker relay.';
  return ''}
-function bindPeerConn(conn){   /* host side: one partner connection */
+function clearPT(){if(NS.pT){clearTimeout(NS.pT);NS.pT=null}}
+function bindPeerConn(conn){   /* host side: exactly one partner connection */
  conn.on('open',()=>{
+  clearPT();
   NS.open=true;NS.role='host';NET.isHost=true;
   NS.link={kind:'peer',send:s=>{try{conn.send(s)}catch(e){}},close:()=>{try{conn.close()}catch(e){}}};
-  try{conn.send(JSON.stringify({t:'welcome',id:conn.peer,role:'host'}))}catch(e){}
+  try{conn.send(JSON.stringify({t:'welcome',id:'hm-'+(NS.room||''),role:'guest'}))}catch(e){}
   onlineStat('Partner connected — linking up…');lobbyRefresh()});
- conn.on('data',d=>{if(NS.link&&NS.link.kind==='peer')handleNetData(String(d))});
- conn.on('close',()=>{
-  if(NS.link&&NS.link.kind==='peer'){NS.link=null;
-   onPeerLeft(null);lobbyRefresh()}})}
+ conn.on('data',d=>{if(NS.link&&NS.link.kind==='peer'&&PC===conn)handleNetData(String(d))});
+ conn.on('close',peerGone);
+ conn.on('error',peerGone)}
+function peerGone(){          /* the partner connection dropped */
+ if(!PC)return;
+ PC=null;
+ if(NS.link&&NS.link.kind==='peer'){NS.link=null;
+  onPeerLeft(null);lobbyRefresh()}}
 function openPeerLink(room){   /* CREATE a room → this client is the host */
  if(!window.Peer){onlineStat('PeerJS did not load — check your connection, or use the worker relay.');return}
  closeLink();
  NS.room=room;NS.kind='peer';NET.on=false;NET.isHost=false;
- onlineStat('Registering room '+room+' with the PeerJS cloud…');
- let conn=null;
- const peer=new Peer('hm-'+room,{debug:0});NS.peer=peer;
+ onlineStat('Registering room '+room+' with '+brokerName()+'…');
+ let fell=false;
+ const peer=new Peer('hm-'+room,peerOpts());NS.peer=peer;
  peer.on('open',()=>{NS.open=true;NS.role='host';NET.isHost=true;
   onlineStat('Room '+room+' is live — waiting for your partner…');lobbyRefresh()});
  peer.on('connection',c=>{
-  if(conn&&conn.open){          /* third wheel: politely reject */
+  if(PC){          /* already paired or pairing: politely reject the third wheel */
    c.on('open',()=>{try{c.send(JSON.stringify({t:'full'}))}catch(e){}
     setTimeout(()=>{try{c.close()}catch(e2){}},200)});return}
-  conn=c;bindPeerConn(c)});
- peer.on('error',err=>{const s=peerErrText(err&&err.type);if(s)onlineStat(s)});
+  PC=c;bindPeerConn(c);
+  NS.pT=setTimeout(()=>{if(PC===c&&!c.open){PC=null;try{c.close()}catch(e){}}},45000)});
+ peer.on('error',err=>{
+  const ty=err&&err.type;
+  if(!fell&&(ty==='server-error'||ty==='socket-error'||ty==='socket-disconnected'||ty==='network')&&serverURL()){
+   fell=true;onlineStat('P2P broker unreachable — opening the room on your worker relay instead…');
+   setTimeout(()=>openWorkerLink(room),700);return}
+  const s=peerErrText(ty);if(s)onlineStat(s)});
  peer.on('disconnected',()=>{if(!peer.destroyed)try{peer.reconnect()}catch(e){}});
  showLobby()}
-function openPeerGuest(room){  /* JOIN a room → the other player is the host */
+function openPeerGuest(room,tries){  /* JOIN a room → the other player is the host */
  if(!window.Peer){onlineStat('PeerJS did not load — check your connection, or use the worker relay.');return}
  closeLink();
+ tries=tries||0;
  NS.room=room;NS.kind='peer';NET.on=false;NET.isHost=false;
- onlineStat('Looking up room '+room+' …');
- const peer=new Peer({debug:0});NS.peer=peer;
+ onlineStat(tries?'Room '+room+' is still registering — one more try…':'Looking up room '+room+' on '+brokerName()+'…');
+ let fell=false;
+ const giveUp=()=>{if(NS.link||NET.on)return;
+  if(!fell&&serverURL()){fell=true;
+   onlineStat('No P2P room answered — trying the code on your worker relay…');
+   setTimeout(()=>openWorkerLink(room),700);return}
+  onlineStat('No room with that code answered — check the code, or ask the host which transport they used.')};
+ const peer=new Peer(peerOpts());NS.peer=peer;
  peer.on('open',()=>{
   const conn=peer.connect('hm-'+room,{reliable:true});
   conn.on('open',()=>{
+   clearPT();
    NS.open=true;
    NS.link={kind:'peer',send:s=>{try{conn.send(s)}catch(e){}},close:()=>{try{conn.close()}catch(e){}}};
    try{conn.send(JSON.stringify({t:'join',name:NS.name}))}catch(e){}
@@ -1695,8 +1731,15 @@ function openPeerGuest(room){  /* JOIN a room → the other player is the host *
    if(NS.link&&NS.link.kind==='peer'){NS.link=null;NS.open=false;
     if(NS.role)onPeerLeft(null);
     else onlineStat('The host is not answering — check the code and try again.');
-    lobbyRefresh()}})});
- peer.on('error',err=>{const s=peerErrText(err&&err.type);if(s)onlineStat(s)});
+    lobbyRefresh()}});
+  conn.on('error',()=>{if(!NS.role)giveUp()});
+  NS.pT=setTimeout(()=>{if(!NS.link&&!NET.on)giveUp()},30000)});
+ peer.on('error',err=>{
+  const ty=err&&err.type;
+  if(ty==='peer-unavailable'){
+   if(tries<1){setTimeout(()=>{if(!NS.link&&!NET.on)openPeerGuest(room,tries+1)},1500);return}
+   giveUp();return}
+  const s=peerErrText(ty);if(s)onlineStat(s)});
  peer.on('disconnected',()=>{if(!peer.destroyed)try{peer.reconnect()}catch(e){}})}
 /* ---- transport B: your Cloudflare Worker relay ---- */
 function openWorkerLink(room){
@@ -1738,6 +1781,7 @@ function onPeerLeft(name){
   else showPause('HOST LEFT — restart the match to finish it solo, or head back to the menu.')}}
 function startOnline(p){
  if(!NET.on){onlineStat('Wait — no partner is in the room yet.');return}
+ if(!NET.isHost){onlineStat('You are the guest — the host picks and starts the match.');return}
  nsnd({t:'init',mode:p.mode,mi:p.mi,cfg:p.cfg,map:p.map});
  beginPayload(p,'host')}
 /* ---- RemotePlayer: the partner's body ---- */
@@ -1871,9 +1915,10 @@ function showOnline(){
  NS.name=(SET.name||'VOSS').toUpperCase();
  const kind=SET.netKind||'peer';
  const srv=serverURL(),srvAuto=!(SET.server||'').trim();
+ const bk=peerBroker();
  const srvHint=kind==='worker'
   ?(srv?(srvAuto?'auto-detected: ':'using: ')+srv:'none set — add it in SETTINGS')
-  :'only used by the worker-relay transport';
+  :(bk?'P2P broker: '+SET.broker.trim():'P2P: public PeerJS cloud · optional broker in SETTINGS');
  $('ovc').innerHTML=`<h1 style="font-size:46px">ONLINE CO-OP</h1>
   <h2>Two players, one island — PeerJS cloud or your own relay.</h2>
   <div class="srow"><label>TRANSPORT<small>how the two of you find each other</small></label>
@@ -1885,7 +1930,7 @@ function showOnline(){
   <div class="orow"><button id="onNew">CREATE ROOM</button>
    <input type="text" id="onCode" maxlength="6" placeholder="CODE" style="width:110px;text-transform:uppercase">
    <button class="ghost" id="onJoin">JOIN ROOM</button></div>
-  <p class="statline" id="ostat">Create a room, share the four-letter code, and your partner joins it. With the PeerJS cloud nobody deploys anything — signalling runs on the public PeerJS broker and the game data flows player-to-player. With your worker relay, both of you connect to <b>wss://…/ws/CODE</b>. If you opened this page straight from your worker, the relay is already auto-detected — no URL needed.</p>
+  <p class="statline" id="ostat">Create a room, share the four-letter code, and your partner joins it. With the PeerJS cloud nobody deploys anything — signalling runs on the public PeerJS broker and the game data flows player-to-player. With your worker relay, both of you connect to <b>wss://…/ws/CODE</b>. If you opened this page straight from your worker, the relay is already auto-detected — no URL needed. If the P2P cloud is unreachable but a relay is set, the room falls back to it automatically.</p>
   <button class="ghost" id="bkM">BACK</button>`;
  $('ov').classList.remove('off');
  $('onKind').value=kind;
@@ -1900,7 +1945,7 @@ function showOnline(){
   netJoin(c,SET.netKind||'peer')}}
 function showLobby(){
  $('ovc').innerHTML=`<h1 style="font-size:44px">CO-OP LOBBY</h1>
-  <h2>Give this code to your partner — they join it from ONLINE CO-OP · via ${NS.kind==='worker'?'your worker relay':'the PeerJS cloud'}.</h2>
+  <h2 id="lbyH">Give this code to your partner — they join it from ONLINE CO-OP · via ${NS.kind==='worker'?'your worker relay':'the PeerJS cloud'}.</h2>
   <div class="ocode">${NS.room||'····'}</div>
   <p class="statline" id="ostat">…</p>
   <div id="lbyModes" style="display:none"><h2 style="margin-top:14px">CHOOSE THE MATCH</h2>
@@ -1920,6 +1965,8 @@ function showLobby(){
  lobbyRefresh()}
 function lobbyRefresh(){
  const el=$('ostat');if(!el)return;
+ const h=$('lbyH');
+ if(h)h.textContent=(NS.role==='host'?'Give this code to your partner — they join it from ONLINE CO-OP':'You joined this room')+' · via '+(NS.kind==='worker'?'your worker relay':'the PeerJS cloud')+'.';
  if(NET.on)el.textContent='Linked with '+NS.peerName+' — you are '+(NS.role==='host'?'the HOST. Pick the match when ready.':'the GUEST. The host will deploy the match.');
  else if(NS.open)el.textContent=NS.role==='host'?'Room is live — waiting for your partner… you are the HOST.':'Connected — waiting for the host to link up… you are the GUEST.';
  else el.textContent='Connecting…';
@@ -2087,6 +2134,8 @@ function showSettings(fromPause){
   <input type="text" id="stName" maxlength="12" value="${SET.name||'VOSS'}" style="width:170px"></div>
  <div class="srow"><label>CO-OP RELAY<small>optional — used by the “worker relay” transport; PeerJS needs none</small></label>
   <input type="text" id="stSrv" value="${SET.server||''}" style="flex:1;min-width:230px" placeholder="wss://your-worker.workers.dev/ws"></div>
+ <div class="srow"><label>PEER BROKER<small>optional — self-hosted PeerServer for direct P2P, e.g. localhost:9000</small></label>
+  <input type="text" id="stBroker" value="${SET.broker||''}" style="flex:1;min-width:230px" placeholder="blank = public PeerJS cloud"></div>
  <button class="ghost" id="bkM">BACK</button>`;
  $('stSh').value=String(SET.shadows);
  $('bkM').onclick=()=>fromPause?showPause():(NS.open?showLobby():showMenu());
@@ -2096,11 +2145,12 @@ function showSettings(fromPause){
   SET.shadows=+$('stSh').value;SET.scale=+$('stScale').value;
   const nm=$('stName');if(nm)SET.name=nm.value;
   const sv=$('stSrv');if(sv)SET.server=sv.value.trim();
+  const bk=$('stBroker');if(bk)SET.broker=bk.value.trim();
   $('stSensV').textContent=SET.sens.toFixed(2);$('stVolV').textContent=Math.round(SET.vol*100)+'%';
   $('stFovV').textContent=SET.fov+'°';$('stScaleV').textContent=Math.round(SET.scale*100)+'%';
   applySettings()};
  ['stSens','stVol','stFov','stScale'].forEach(id=>$(id).oninput=upd);
- ['stName','stSrv'].forEach(id=>$(id).oninput=upd);
+ ['stName','stSrv','stBroker'].forEach(id=>$(id).oninput=upd);
  ['stBob','stMini','stSh'].forEach(id=>$(id).onchange=upd)}
 function applySettings(){
  BASEFOV=SET.fov;
